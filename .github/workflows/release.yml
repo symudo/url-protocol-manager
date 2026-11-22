@@ -50,15 +50,15 @@ jobs:
             echo "$nsisDir" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           }
 
-      - name: Run unit & registry tests
-        run: |
-          go test -v ./...
-
       - name: Verify frontend build
         working-directory: frontend
         run: |
           npm ci
           npm run build
+
+      - name: Run unit & registry tests
+        run: |
+          go test -v ./...
 
       - name: Build single executable and NSIS installer
         run: |
