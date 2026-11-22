@@ -102,3 +102,25 @@ func TestOpenInRegeditValidation(t *testing.T) {
 		}
 	}
 }
+
+func TestResolveWebviewDataPath(t *testing.T) {
+	tmpExeDir := t.TempDir()
+	tmpLocal := t.TempDir()
+
+	// Without a sibling "data" folder, should fall back to <localAppData>\UrlProtocolManager
+	stdPath := resolveWebviewDataPath(tmpExeDir, tmpLocal)
+	wantStd := filepath.Join(tmpLocal, appDataFolderName)
+	if stdPath != wantStd {
+		t.Fatalf("standard mode = %q, want %q", stdPath, wantStd)
+	}
+
+	// Once a writable "data" folder exists alongside the executable, portable mode takes priority
+	portableDir := filepath.Join(tmpExeDir, "data")
+	if err := os.MkdirAll(portableDir, 0755); err != nil {
+		t.Fatalf("mkdir portable data failed: %v", err)
+	}
+	gotPortable := resolveWebviewDataPath(tmpExeDir, tmpLocal)
+	if gotPortable != portableDir {
+		t.Fatalf("portable mode = %q, want %q", gotPortable, portableDir)
+	}
+}

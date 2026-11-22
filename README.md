@@ -25,6 +25,8 @@
 | **安装版** | `UrlProtocolManager-vX.Y.Z-windows-amd64-setup.exe` | 标准 Windows 安装程序，支持开始菜单与控制面板卸载 |
 
 > 系统要求：Windows 10 / 11 (x64)，内置 Microsoft Edge WebView2 运行时即可运行。
+>
+> **数据存储说明**：协议数据实时读写 Windows 注册表；界面偏好与 WebView2 缓存默认统一存放在 `%LOCALAPPDATA%\UrlProtocolManager`（不随版本号重复建目录）。若在程序同目录创建 `data` 文件夹（便携版默认内置），则自动启用便携模式存放在同目录 `data` 下。
 
 ## 本地开发与构建
 

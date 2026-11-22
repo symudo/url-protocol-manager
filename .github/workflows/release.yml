@@ -95,6 +95,8 @@ jobs:
           # 2. Portable zip archive
           $portableStage = "dist-portable"
           New-Item -ItemType Directory -Force -Path $portableStage | Out-Null
+          New-Item -ItemType Directory -Force -Path (Join-Path $portableStage "data") | Out-Null
+          "此目录用于绿色便携模式保存界面偏好与 WebView2 运行缓存，删除此文件夹将回退至系统 %LOCALAPPDATA%\UrlProtocolManager。" | Out-File -FilePath (Join-Path $portableStage "data\README.txt") -Encoding utf8
           Copy-Item $exePath (Join-Path $portableStage "UrlProtocolManager.exe")
           Copy-Item "LICENSE" (Join-Path $portableStage "LICENSE.txt")
           $readmeLines = @(
@@ -105,7 +107,7 @@ jobs:
             "1. 双击 UrlProtocolManager.exe 即可直接运行，无需安装。",
             "2. 默认以标准用户权限启动，可扫描全部协议并管理当前用户 (HKCU) 协议。",
             "3. 修改或删除系统级 (HKLM) 协议时，可在软件右上角一键「以管理员身份重启」。",
-            "4. 本软件纯绿色无配置文件残留；支持导出与导入标准 Windows .reg 备份文件。",
+            "4. 本压缩包自带 data 目录，已自动启用便携数据模式（界面偏好与运行缓存均保存在同目录 data 下）；若删除 data 目录则统一保存在 %LOCALAPPDATA%\UrlProtocolManager。",
             "",
             "系统要求：Windows 10 / 11 (x64)（需系统内置 Edge WebView2 运行时）。"
           )

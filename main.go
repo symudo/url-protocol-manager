@@ -7,6 +7,8 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 	"github.com/wailsapp/wails/v2/pkg/options/windows"
+
+	"url-protocol-manager/internal/winutil"
 )
 
 //go:embed all:frontend/dist
@@ -39,6 +41,7 @@ func main() {
 			WindowIsTranslucent:  false,
 			DisableWindowIcon:    false,
 			Theme:                windows.SystemDefault,
+			WebviewUserDataPath:  winutil.ResolveWebviewDataPath(),
 		},
 	})
 
