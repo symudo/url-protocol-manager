@@ -1,0 +1,19 @@
+# Build artifacts
+build/bin/
+build/windows/icon.ico
+*.syso
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/src/wailsjs/
+frontend/package.json.md5
+
+# OS & Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log
+*.exe
+*.zip

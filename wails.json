@@ -1,0 +1,22 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "UrlProtocolManager",
+  "outputfilename": "UrlProtocolManager",
+  "frontend:install": "npm install",
+  "frontend:build": "npm run build",
+  "frontend:dev:watcher": "npm run dev",
+  "frontend:dev:serverUrl": "auto",
+  "wailsjsdir": "./frontend/src",
+  "author": {
+    "name": "symudo",
+    "email": "3229921264@qq.com"
+  },
+  "info": {
+    "companyName": "symudo",
+    "productName": "URL Protocol Manager",
+    "productVersion": "1.0.0",
+    "copyright": "Copyright (c) 2026 symudo",
+    "comments": "Modern Windows Custom URL Protocol Registry Manager"
+  },
+  "nsisType": "multiple"
+}

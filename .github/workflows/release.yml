@@ -1,0 +1,149 @@
+name: Build and Release Windows Artifacts
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. v1.0.0)'
+        required: true
+        default: 'v1.0.0'
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    name: Build Windows (Single / Portable / Installer)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Wails CLI & NSIS
+        run: |
+          go install github.com/wailsapp/wails/v2/cmd/wails@v2.17.1
+          $goBin = Join-Path (go env GOPATH) "bin"
+          echo "$goBin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+          choco install nsis -y --no-progress
+          $nsisDir = "C:\Program Files (x86)\NSIS"
+          if (Test-Path $nsisDir) {
+            echo "$nsisDir" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          }
+
+      - name: Run unit & registry tests
+        run: |
+          go test -v ./...
+
+      - name: Verify frontend build
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build single executable and NSIS installer
+        run: |
+          wails build -clean -nsis -ldflags "-s -w"
+          Get-ChildItem -Path build/bin
+
+      - name: Package release artifacts (Single / Portable / Installer)
+        id: package
+        run: |
+          $tag = if ("${{ github.event_name }}" -eq "workflow_dispatch") { "${{ inputs.tag }}" } else { "${{ github.ref_name }}" }
+          echo "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+          $outDir = "dist-release"
+          New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+
+          $exePath = "build/bin/UrlProtocolManager.exe"
+          if (-not (Test-Path $exePath)) {
+            throw "Expected single executable not found at $exePath"
+          }
+
+          # 1. Single-file executable
+          $singleName = "UrlProtocolManager-$tag-windows-amd64-single.exe"
+          Copy-Item $exePath (Join-Path $outDir $singleName)
+
+          # 2. Portable zip archive
+          $portableStage = "dist-portable"
+          New-Item -ItemType Directory -Force -Path $portableStage | Out-Null
+          Copy-Item $exePath (Join-Path $portableStage "UrlProtocolManager.exe")
+          Copy-Item "LICENSE" (Join-Path $portableStage "LICENSE.txt")
+          @"
+          URL 协议管理器 ($tag) - 绿色便携版
+          ====================================
+
+          使用说明：
+          1. 双击 UrlProtocolManager.exe 即可直接运行，无需安装。
+          2. 默认以标准用户权限启动，可扫描全部协议并管理当前用户 (HKCU) 协议。
+          3. 修改或删除系统级 (HKLM) 协议时，可在软件右上角一键“以管理员身份重启”。
+          4. 本软件纯绿色无配置文件残留；支持导出与导入标准 Windows .reg 备份文件。
+
+          系统要求：Windows 10 / 11 (x64)（需系统内置 Edge WebView2 运行时）。
+          "@ | Out-File -FilePath (Join-Path $portableStage "使用说明.txt") -Encoding utf8
+
+          $portableName = "UrlProtocolManager-$tag-windows-amd64-portable.zip"
+          Compress-Archive -Path "$portableStage/*" -DestinationPath (Join-Path $outDir $portableName) -Force
+
+          # 3. NSIS Installer
+          $installerFile = Get-ChildItem -Path "build/bin" -Filter "*installer*.exe" | Select-Object -First 1
+          if (-not $installerFile) {
+            throw "Expected NSIS installer not found in build/bin"
+          }
+          $setupName = "UrlProtocolManager-$tag-windows-amd64-setup.exe"
+          Copy-Item $installerFile.FullName (Join-Path $outDir $setupName)
+
+          # 4. Generate SHA256SUMS.txt
+          $checksumLines = @()
+          Get-ChildItem -Path $outDir -File | Sort-Object Name | ForEach-Object {
+            $hash = (Get-FileHash -Path $_.FullName -Algorithm SHA256).Hash.ToLower()
+            $checksumLines += "$hash  $($_.Name)"
+          }
+          $checksumLines | Out-File -FilePath (Join-Path $outDir "SHA256SUMS.txt") -Encoding ascii
+
+          Get-ChildItem -Path $outDir | Format-Table Name, Length
+
+      - name: Extract changelog for release notes
+        run: |
+          $tag = "${{ steps.package.outputs.tag }}"
+          $content = Get-Content -Path "CHANGELOG.md" -Raw -Encoding utf8
+          $escapedTag = [regex]::Escape($tag)
+          $pattern = "(?ms)^##\s+\[$escapedTag\][^\r\n]*\r?\n(.*?)(?=^##\s+\[|\z)"
+          $match = [regex]::Match($content, $pattern)
+          if ($match.Success) {
+            $notes = "## $tag 更新日志`r`n`r`n" + $match.Groups[1].Value.Trim()
+          } else {
+            $notes = $content
+          }
+          $notes | Out-File -FilePath "release-notes.md" -Encoding utf8
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.package.outputs.tag }}
+          name: URL 协议管理器 ${{ steps.package.outputs.tag }}
+          body_path: release-notes.md
+          files: |
+            dist-release/UrlProtocolManager-${{ steps.package.outputs.tag }}-windows-amd64-single.exe
+            dist-release/UrlProtocolManager-${{ steps.package.outputs.tag }}-windows-amd64-portable.zip
+            dist-release/UrlProtocolManager-${{ steps.package.outputs.tag }}-windows-amd64-setup.exe
+            dist-release/SHA256SUMS.txt
