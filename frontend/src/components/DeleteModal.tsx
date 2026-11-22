@@ -44,7 +44,12 @@ export const DeleteModal: React.FC<DeleteModalProps> = ({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/45 backdrop-blur-[2px]">
+    <div
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget && !deleting) onClose()
+      }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/45 backdrop-blur-[2px]"
+    >
       <div className="animate-modal w-full max-w-[490px] rounded-2xl bg-white dark:bg-[#161B22] border border-slate-200/90 dark:border-slate-800 shadow-modal overflow-hidden">
         <div className="px-6 py-4 border-b border-slate-200/80 dark:border-slate-800 flex items-center justify-between">
           <div className="flex items-center gap-2.5">

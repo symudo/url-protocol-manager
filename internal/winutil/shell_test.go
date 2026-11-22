@@ -93,3 +93,12 @@ func TestLaunchURIValidation(t *testing.T) {
 		}
 	}
 }
+
+func TestOpenInRegeditValidation(t *testing.T) {
+	invalid := []string{"", "HKEY_USERS\\foo", "C:\\Windows", "SOFTWARE\\Classes\\test"}
+	for _, p := range invalid {
+		if err := OpenInRegedit(p); err == nil {
+			t.Errorf("expected OpenInRegedit(%q) to reject invalid hive path", p)
+		}
+	}
+}

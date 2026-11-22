@@ -28,12 +28,16 @@ func ExportProtocolsToReg(refs []ProtocolRef) ([]byte, error) {
 
 	exportedCount := 0
 	for _, ref := range refs {
+		name := strings.TrimSpace(ref.Name)
+		if name == "" || strings.ContainsAny(name, `\/`) {
+			continue
+		}
 		root, basePath, displayBase, err := rootForScope(ref.Scope)
 		if err != nil {
 			continue
 		}
-		subPath := basePath + `\` + ref.Name
-		fullDisplay := displayBase + `\` + ref.Name
+		subPath := basePath + `\` + name
+		fullDisplay := displayBase + `\` + name
 		if err := dumpKeyRecursive(&sb, root, subPath, fullDisplay); err != nil {
 			continue
 		}

@@ -24,6 +24,7 @@ interface WailsAppBindings {
   BrowseExecutable(): Promise<string>
   TestProtocol(uri: string): Promise<void>
   OpenProgramFolder(filePath: string): Promise<void>
+  OpenInRegedit(registryPath: string): Promise<void>
   RestartAsAdmin(): Promise<void>
 }
 
@@ -31,6 +32,11 @@ interface WailsRuntime {
   WindowMinimise(): void
   WindowToggleMaximise(): void
   Quit(): void
+  WindowSetLightTheme?(): void
+  WindowSetDarkTheme?(): void
+  WindowSetSystemDefaultTheme?(): void
+  OnFileDrop?(callback: (x: number, y: number, paths: string[]) => void, useDropTarget: boolean): void
+  OnFileDropOff?(): void
 }
 
 declare global {
@@ -72,6 +78,7 @@ export const api = {
   browseExecutable: () => getApp().BrowseExecutable(),
   testProtocol: (uri: string) => getApp().TestProtocol(uri),
   openProgramFolder: (filePath: string) => getApp().OpenProgramFolder(filePath),
+  openInRegedit: (registryPath: string) => getApp().OpenInRegedit(registryPath),
   restartAsAdmin: () => getApp().RestartAsAdmin(),
 }
 
@@ -79,6 +86,14 @@ export const windowControls = {
   minimise: () => window.runtime?.WindowMinimise(),
   toggleMaximise: () => window.runtime?.WindowToggleMaximise(),
   quit: () => window.runtime?.Quit(),
+  setTheme: (mode: 'light' | 'dark' | 'system') => {
+    if (mode === 'dark') window.runtime?.WindowSetDarkTheme?.()
+    else if (mode === 'light') window.runtime?.WindowSetLightTheme?.()
+    else window.runtime?.WindowSetSystemDefaultTheme?.()
+  },
+  onFileDrop: (cb: (x: number, y: number, paths: string[]) => void) =>
+    window.runtime?.OnFileDrop?.(cb, false),
+  offFileDrop: () => window.runtime?.OnFileDropOff?.(),
 }
 
 export function formatError(err: unknown): string {

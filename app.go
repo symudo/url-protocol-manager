@@ -14,7 +14,7 @@ import (
 )
 
 // AppVersion can be overridden at build time via -ldflags "-X main.AppVersion=x.y.z".
-var AppVersion = "1.0.2"
+var AppVersion = "1.1.0"
 
 // AppInfo exposes application metadata and current privilege status.
 type AppInfo struct {
@@ -180,6 +180,10 @@ func (a *App) TestProtocol(uri string) error {
 
 func (a *App) OpenProgramFolder(filePath string) error {
 	return winutil.RevealInExplorer(filePath)
+}
+
+func (a *App) OpenInRegedit(registryPath string) error {
+	return winutil.OpenInRegedit(registryPath)
 }
 
 func (a *App) RestartAsAdmin() error {

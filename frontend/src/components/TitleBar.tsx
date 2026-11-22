@@ -11,13 +11,14 @@ import {
   X,
 } from 'lucide-react'
 import type { ThemeMode } from '../types'
+import type { ThemeTransitionOrigin } from '../hooks/useTheme'
 import { windowControls } from '../api'
 
 interface TitleBarProps {
   version: string
   isAdmin: boolean
   themeMode: ThemeMode
-  onThemeChange: (mode: ThemeMode) => void
+  onThemeChange: (mode: ThemeMode, origin?: ThemeTransitionOrigin) => void
   onRequestAdmin: () => void
 }
 
@@ -85,7 +86,13 @@ export const TitleBar: React.FC<TitleBarProps> = ({
             return (
               <button
                 key={opt.value}
-                onClick={() => onThemeChange(opt.value)}
+                onClick={(e) => {
+                  const rect = e.currentTarget.getBoundingClientRect()
+                  onThemeChange(opt.value, {
+                    x: rect.left + rect.width / 2,
+                    y: rect.top + rect.height / 2,
+                  })
+                }}
                 title={`主题：${opt.label}`}
                 className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium transition-all ${
                   active

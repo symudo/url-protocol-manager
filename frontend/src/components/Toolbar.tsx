@@ -14,13 +14,14 @@ import {
   X,
 } from 'lucide-react'
 
-export type FilterTab = 'all' | 'hkcu' | 'hklm' | 'missing' | 'system'
+export type FilterTab = 'all' | 'hkcu' | 'hklm' | 'missing' | 'empty' | 'system'
 
 interface FilterCounts {
   all: number
   hkcu: number
   hklm: number
   missing: number
+  empty: number
   system: number
   cleanable: number
 }
@@ -83,13 +84,16 @@ export const Toolbar: React.FC<ToolbarProps> = ({
       }
     }
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setExportMenuOpen(false)
+      if (e.key === 'Escape') {
+        e.stopPropagation()
+        setExportMenuOpen(false)
+      }
     }
     window.addEventListener('mousedown', onPointerDown)
-    window.addEventListener('keydown', onKey)
+    window.addEventListener('keydown', onKey, true)
     return () => {
       window.removeEventListener('mousedown', onPointerDown)
-      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('keydown', onKey, true)
     }
   }, [exportMenuOpen])
 
@@ -103,6 +107,9 @@ export const Toolbar: React.FC<ToolbarProps> = ({
       count: counts.missing,
       accent: counts.missing > 0 ? 'amber' : undefined,
     },
+    ...(counts.empty > 0 || activeTab === 'empty'
+      ? [{ id: 'empty' as FilterTab, label: '空命令', count: counts.empty }]
+      : []),
     { id: 'system', label: '系统 / UWP', count: counts.system },
   ]
 
@@ -237,7 +244,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
               >
                 <span>{tab.label}</span>
                 <span
-                  className={`px-1.5 py-0.2 rounded-full text-[11px] font-mono ${
+                  className={`px-1.5 py-0.5 rounded-full text-[11px] font-mono leading-none ${
                     active
                       ? 'bg-white/20 text-white'
                       : tab.accent === 'amber'

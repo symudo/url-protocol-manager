@@ -311,6 +311,14 @@ func TestSecurityAndRegressionFixes(t *testing.T) {
 	if got == nil || got.Command != "" || got.Health != HealthEmpty {
 		t.Fatalf("expected cleared command with health=empty, got %+v", got)
 	}
+
+	// 6. ExportProtocolsToReg must reject invalid/empty names with path separators
+	if _, err := ExportProtocolsToReg([]ProtocolRef{
+		{Scope: ScopeHKCU, Name: ""},
+		{Scope: ScopeHKCU, Name: `..\bad`},
+	}); err == nil {
+		t.Fatalf("expected ExportProtocolsToReg to fail when all refs are invalid")
+	}
 }
 
 func findByID(items []ProtocolItem, id string) *ProtocolItem {

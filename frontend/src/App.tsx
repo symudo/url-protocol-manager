@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { api, formatError } from './api'
+import { FileCode2 } from 'lucide-react'
+import { api, formatError, windowControls } from './api'
 import { useTheme } from './hooks/useTheme'
 import { TitleBar } from './components/TitleBar'
 import { Toolbar, type FilterTab } from './components/Toolbar'
@@ -24,7 +25,7 @@ import type {
 export default function App() {
   const { mode: themeMode, setMode: setThemeMode } = useTheme()
 
-  const [appInfo, setAppInfo] = useState<AppInfo>({ version: '1.0.2', isAdmin: false })
+  const [appInfo, setAppInfo] = useState<AppInfo>({ version: '1.1.0', isAdmin: false })
   const [protocols, setProtocols] = useState<ProtocolItem[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -39,14 +40,16 @@ export default function App() {
   const [batchCleanOpen, setBatchCleanOpen] = useState(false)
   const [importPreview, setImportPreview] = useState<ImportPreviewResult | null>(null)
   const [hkcrFallback, setHkcrFallback] = useState<Scope>('HKCU')
+  const [draggingFile, setDraggingFile] = useState(false)
 
   const [toasts, setToasts] = useState<ToastMessage[]>([])
   const toastIdRef = useRef(1)
   const searchInputRef = useRef<HTMLInputElement>(null)
+  const dragDepthRef = useRef(0)
 
   const notify = useCallback((type: ToastMessage['type'], text: string) => {
     const id = toastIdRef.current++
-    setToasts((prev) => [...prev, { id, type, text }])
+    setToasts((prev) => [...prev.slice(-2), { id, type, text }])
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id))
     }, 3600)
@@ -75,7 +78,107 @@ export default function App() {
     loadProtocols()
   }, [loadProtocols])
 
-  // Global keyboard shortcuts: Ctrl+K focuses search, Esc closes overlays
+  // Drag-and-drop .reg file directly onto window to trigger import preview
+  useEffect(() => {
+    windowControls.onFileDrop((_x, _y, paths) => {
+      dragDepthRef.current = 0
+      setDraggingFile(false)
+      if (!paths || paths.length === 0) return
+      const regFile = paths.find((p) => p.toLowerCase().endsWith('.reg'))
+      if (!regFile) {
+        notify('info', '请拖入 .reg 格式的 Windows 注册表文件')
+        return
+      }
+      api
+        .rePreviewRegFile(regFile, hkcrFallback)
+        .then((preview) => {
+          if (preview && preview.filePath) {
+            setImportPreview(preview)
+          }
+        })
+        .catch((err) => {
+          notify('error', `解析拖入文件失败：${formatError(err)}`)
+        })
+    })
+
+    const onDragEnter = (e: DragEvent) => {
+      if (e.dataTransfer?.types?.includes('Files')) {
+        dragDepthRef.current++
+        setDraggingFile(true)
+      }
+    }
+    const onDragLeave = () => {
+      dragDepthRef.current = Math.max(0, dragDepthRef.current - 1)
+      if (dragDepthRef.current === 0) setDraggingFile(false)
+    }
+    const onDragOver = (e: DragEvent) => {
+      e.preventDefault()
+    }
+    const onDrop = (e: DragEvent) => {
+      e.preventDefault()
+      dragDepthRef.current = 0
+      setDraggingFile(false)
+    }
+
+    window.addEventListener('dragenter', onDragEnter)
+    window.addEventListener('dragleave', onDragLeave)
+    window.addEventListener('dragover', onDragOver)
+    window.addEventListener('drop', onDrop)
+    return () => {
+      windowControls.offFileDrop()
+      window.removeEventListener('dragenter', onDragEnter)
+      window.removeEventListener('dragleave', onDragLeave)
+      window.removeEventListener('dragover', onDragOver)
+      window.removeEventListener('drop', onDrop)
+    }
+  }, [hkcrFallback, notify])
+
+  const counts = useMemo(() => {
+    let hkcu = 0
+    let hklm = 0
+    let missing = 0
+    let empty = 0
+    let system = 0
+    let cleanable = 0
+    for (const p of protocols) {
+      if (p.scope === 'HKCU') hkcu++
+      else hklm++
+      if (p.health === 'missing') missing++
+      if (p.health === 'empty') empty++
+      if (p.health === 'system') system++
+      if (p.cleanable) cleanable++
+    }
+    return { all: protocols.length, hkcu, hklm, missing, empty, system, cleanable }
+  }, [protocols])
+
+  const cleanableItems = useMemo(
+    () => protocols.filter((p) => p.cleanable),
+    [protocols],
+  )
+
+  const filteredProtocols = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    return protocols.filter((p) => {
+      if (activeTab === 'hkcu' && p.scope !== 'HKCU') return false
+      if (activeTab === 'hklm' && p.scope !== 'HKLM') return false
+      if (activeTab === 'missing' && p.health !== 'missing') return false
+      if (activeTab === 'empty' && p.health !== 'empty') return false
+      if (activeTab === 'system' && p.health !== 'system') return false
+
+      if (!q) return true
+      return (
+        p.name.toLowerCase().includes(q) ||
+        p.description.toLowerCase().includes(q) ||
+        p.command.toLowerCase().includes(q) ||
+        p.executableName.toLowerCase().includes(q) ||
+        p.executablePath.toLowerCase().includes(q)
+      )
+    })
+  }, [protocols, activeTab, query])
+
+  const hasModalOpen = Boolean(deleteTarget || createOpen || importPreview || batchCleanOpen)
+
+  // Global keyboard shortcuts: Ctrl+K focuses search, Esc closes overlays, ArrowUp/Down navigates list
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
@@ -91,51 +194,33 @@ export default function App() {
           setSelectMode(false)
           setCheckedExportIds(new Set())
         } else if (selectedId) setSelectedId(null)
+      } else if (
+        (e.key === 'ArrowDown' || e.key === 'ArrowUp') &&
+        !hasModalOpen &&
+        !selectMode &&
+        filteredProtocols.length > 0
+      ) {
+        const tag = (document.activeElement?.tagName || '').toLowerCase()
+        if (tag === 'input' || tag === 'textarea' || tag === 'select') return
+        e.preventDefault()
+        const curIdx = filteredProtocols.findIndex((p) => p.id === selectedId)
+        let nextIdx = 0
+        if (e.key === 'ArrowDown') {
+          nextIdx = curIdx < 0 ? 0 : Math.min(filteredProtocols.length - 1, curIdx + 1)
+        } else {
+          nextIdx = curIdx <= 0 ? 0 : curIdx - 1
+        }
+        const nextId = filteredProtocols[nextIdx].id
+        setSelectedId(nextId)
+        requestAnimationFrame(() => {
+          const el = document.querySelector(`[data-protocol-id="${CSS.escape(nextId)}"]`)
+          el?.scrollIntoView({ block: 'nearest' })
+        })
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [deleteTarget, createOpen, importPreview, batchCleanOpen, selectMode, selectedId])
-
-  const counts = useMemo(() => {
-    let hkcu = 0
-    let hklm = 0
-    let missing = 0
-    let system = 0
-    let cleanable = 0
-    for (const p of protocols) {
-      if (p.scope === 'HKCU') hkcu++
-      else hklm++
-      if (p.health === 'missing') missing++
-      if (p.health === 'system') system++
-      if (p.cleanable) cleanable++
-    }
-    return { all: protocols.length, hkcu, hklm, missing, system, cleanable }
-  }, [protocols])
-
-  const cleanableItems = useMemo(
-    () => protocols.filter((p) => p.cleanable),
-    [protocols],
-  )
-
-  const filteredProtocols = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    return protocols.filter((p) => {
-      if (activeTab === 'hkcu' && p.scope !== 'HKCU') return false
-      if (activeTab === 'hklm' && p.scope !== 'HKLM') return false
-      if (activeTab === 'missing' && p.health !== 'missing') return false
-      if (activeTab === 'system' && p.health !== 'system') return false
-
-      if (!q) return true
-      return (
-        p.name.toLowerCase().includes(q) ||
-        p.description.toLowerCase().includes(q) ||
-        p.command.toLowerCase().includes(q) ||
-        p.executableName.toLowerCase().includes(q) ||
-        p.executablePath.toLowerCase().includes(q)
-      )
-    })
-  }, [protocols, activeTab, query])
+  }, [deleteTarget, createOpen, importPreview, batchCleanOpen, selectMode, selectedId, hasModalOpen, filteredProtocols])
 
   const selectedItem = useMemo(
     () => protocols.find((p) => p.id === selectedId) || null,
@@ -166,8 +251,10 @@ export default function App() {
     try {
       await api.createProtocol(payload)
       notify('success', `已创建协议 ${payload.name}:// (${payload.scope})`)
+      setSelectMode(false)
+      setCheckedExportIds(new Set())
       await loadProtocols()
-      setSelectedId(`${payload.scope}:${payload.name}`)
+      setSelectedId(`${payload.scope}:${payload.name.trim()}`)
     } catch (err) {
       notify('error', formatError(err))
       throw err
@@ -386,6 +473,15 @@ export default function App() {
     }
   }
 
+  const handleOpenRegedit = async (registryPath: string) => {
+    try {
+      await api.openInRegedit(registryPath)
+      notify('info', '正在打开注册表编辑器并定位至该协议项')
+    } catch (err) {
+      notify('error', formatError(err))
+    }
+  }
+
   return (
     <div className="h-screen w-screen flex flex-col bg-[#F8FAFC] dark:bg-[#0D1117] text-slate-900 dark:text-slate-100 border border-slate-300/70 dark:border-slate-800 overflow-hidden">
       <TitleBar
@@ -443,6 +539,7 @@ export default function App() {
         <DetailDrawer
           item={selectedItem}
           isAdmin={appInfo.isAdmin}
+          hasModalOpen={hasModalOpen}
           onClose={() => setSelectedId(null)}
           onSave={handleSaveUpdate}
           onDelete={(item) => setDeleteTarget(item)}
@@ -450,9 +547,27 @@ export default function App() {
           onBrowseExe={handleBrowseExe}
           onTestLaunch={handleTestLaunch}
           onOpenFolder={handleOpenFolder}
+          onOpenRegedit={handleOpenRegedit}
           onRequestAdmin={handleRequestAdmin}
         />
       </div>
+
+      {/* Drag & Drop .reg Overlay */}
+      {draggingFile && (
+        <div className="fixed inset-0 z-50 pointer-events-none flex items-center justify-center p-6 bg-indigo-500/10 dark:bg-indigo-500/15 backdrop-blur-[2px]">
+          <div className="animate-modal px-8 py-6 rounded-2xl bg-white/95 dark:bg-[#161B22]/95 border-2 border-dashed border-indigo-400 dark:border-indigo-500 shadow-modal flex flex-col items-center gap-2.5 text-center">
+            <div className="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+              <FileCode2 className="w-6 h-6" />
+            </div>
+            <div className="text-[15px] font-semibold text-slate-900 dark:text-slate-100">
+              松开鼠标，立即预览导入 .reg 文件
+            </div>
+            <div className="text-[12.5px] text-slate-500 dark:text-slate-400">
+              导入前将展示全部检测到的自定义 URL 协议供您勾选确认
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modals */}
       <CreateModal

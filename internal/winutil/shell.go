@@ -13,6 +13,7 @@ import (
 	"unicode/utf16"
 
 	"golang.org/x/sys/windows"
+	"golang.org/x/sys/windows/registry"
 )
 
 var (
@@ -207,4 +208,45 @@ func RevealInExplorer(filePath string) error {
 		return cmd.Start()
 	}
 	return fmt.Errorf("目标文件及其所在目录均不存在: %s", target)
+}
+
+// OpenInRegedit launches Windows Registry Editor (regedit.exe) directly navigated to registryPath.
+func OpenInRegedit(registryPath string) error {
+	cleaned := strings.TrimSpace(registryPath)
+	upper := strings.ToUpper(cleaned)
+	if !strings.HasPrefix(upper, `HKEY_CURRENT_USER\`) && !strings.HasPrefix(upper, `HKEY_LOCAL_MACHINE\`) {
+		return fmt.Errorf("无效的注册表路径: %s", registryPath)
+	}
+
+	k, _, err := registry.CreateKey(
+		registry.CURRENT_USER,
+		`Software\Microsoft\Windows\CurrentVersion\Applets\Regedit`,
+		registry.SET_VALUE,
+	)
+	if err != nil {
+		return fmt.Errorf("无法写入注册表编辑器定位记录: %w", err)
+	}
+	// Regedit skips the root segment before the first '\' regardless of OS locale.
+	setErr := k.SetStringValue("LastKey", `Computer\`+cleaned)
+	k.Close()
+	if setErr != nil {
+		return fmt.Errorf("写入 LastKey 失败: %w", setErr)
+	}
+
+	verbPtr, err := syscall.UTF16PtrFromString("open")
+	if err != nil {
+		return err
+	}
+	exePtr, err := syscall.UTF16PtrFromString("regedit.exe")
+	if err != nil {
+		return err
+	}
+	argsPtr, err := syscall.UTF16PtrFromString("-m")
+	if err != nil {
+		return err
+	}
+	if err := windows.ShellExecute(0, verbPtr, exePtr, argsPtr, nil, windows.SW_SHOWNORMAL); err != nil {
+		return fmt.Errorf("启动注册表编辑器失败: %w", err)
+	}
+	return nil
 }

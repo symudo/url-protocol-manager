@@ -118,6 +118,7 @@ export const ProtocolList: React.FC<ProtocolListProps> = ({
           return (
             <button
               key={item.id}
+              data-protocol-id={item.id}
               onClick={() => (selectMode ? onToggleCheck(item.id) : onSelect(item))}
               className={`w-full text-left group rounded-2xl px-4 py-3.5 flex items-center gap-3.5 border transition-all ${
                 selected || checked

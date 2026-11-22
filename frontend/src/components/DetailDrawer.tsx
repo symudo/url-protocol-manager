@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   Check,
   Copy,
+  Database,
   Download,
   FolderOpen,
   Play,
@@ -18,6 +19,7 @@ import { ProtocolAvatar } from './ProtocolAvatar'
 interface DetailDrawerProps {
   item: ProtocolItem | null
   isAdmin: boolean
+  hasModalOpen: boolean
   onClose: () => void
   onSave: (payload: ProtocolPayload) => Promise<void>
   onDelete: (item: ProtocolItem) => void
@@ -25,12 +27,14 @@ interface DetailDrawerProps {
   onBrowseExe: () => Promise<string>
   onTestLaunch: (uri: string) => Promise<void>
   onOpenFolder: (path: string) => Promise<void>
+  onOpenRegedit: (registryPath: string) => Promise<void>
   onRequestAdmin: () => void
 }
 
 export const DetailDrawer: React.FC<DetailDrawerProps> = ({
   item,
   isAdmin,
+  hasModalOpen,
   onClose,
   onSave,
   onDelete,
@@ -38,6 +42,7 @@ export const DetailDrawer: React.FC<DetailDrawerProps> = ({
   onBrowseExe,
   onTestLaunch,
   onOpenFolder,
+  onOpenRegedit,
   onRequestAdmin,
 }) => {
   const [description, setDescription] = useState('')
@@ -74,13 +79,55 @@ export const DetailDrawer: React.FC<DetailDrawerProps> = ({
     }
   }, [item])
 
-  if (!item) return null
+  const needsAdmin = item ? item.scope === 'HKLM' && !isAdmin : false
+  const isDirty = item
+    ? description !== item.description ||
+      command !== item.command ||
+      iconPath !== item.iconPath
+    : false
 
-  const needsAdmin = item.scope === 'HKLM' && !isAdmin
-  const isDirty =
-    description !== item.description ||
-    command !== item.command ||
-    iconPath !== item.iconPath
+  const saveChanges = async () => {
+    if (!item || needsAdmin || !isDirty || saving) return
+    setSaving(true)
+    try {
+      justSavedRef.current = true
+      await onSave({
+        name: item.name,
+        scope: item.scope,
+        description,
+        command,
+        iconPath,
+      })
+      setDiscardWarn(false)
+    } catch {
+      justSavedRef.current = false
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // Keyboard shortcuts while drawer is active: Ctrl+S saves, Esc guards unsaved drafts
+  useEffect(() => {
+    if (!item || hasModalOpen) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault()
+        void saveChanges()
+      } else if (e.key === 'Escape' && isDirty) {
+        e.stopPropagation()
+        if (!discardWarn) {
+          setDiscardWarn(true)
+        } else {
+          setDiscardWarn(false)
+          onClose()
+        }
+      }
+    }
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  })
+
+  if (!item) return null
 
   const handleRequestClose = () => {
     if (isDirty && !discardWarn) {
@@ -112,23 +159,7 @@ export const DetailDrawer: React.FC<DetailDrawerProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (needsAdmin || !isDirty || saving) return
-    setSaving(true)
-    try {
-      justSavedRef.current = true
-      await onSave({
-        name: item.name,
-        scope: item.scope,
-        description,
-        command,
-        iconPath,
-      })
-      setDiscardWarn(false)
-    } catch {
-      justSavedRef.current = false
-    } finally {
-      setSaving(false)
-    }
+    await saveChanges()
   }
 
   const handleRunTest = async () => {
@@ -236,6 +267,15 @@ export const DetailDrawer: React.FC<DetailDrawerProps> = ({
           >
             <FolderOpen className="w-3.5 h-3.5" />
             <span>打开目录</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onOpenRegedit(item.registryPath)}
+            title="在 Windows 注册表编辑器 (regedit) 中定位此项"
+            className="h-9 w-9 rounded-xl inline-flex items-center justify-center bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200/80 dark:bg-slate-800/70 dark:hover:bg-slate-800 dark:text-slate-200 dark:border-slate-700/80 transition-colors"
+          >
+            <Database className="w-4 h-4" />
           </button>
 
           <button
@@ -445,6 +485,7 @@ export const DetailDrawer: React.FC<DetailDrawerProps> = ({
           <button
             type="submit"
             disabled={needsAdmin || !isDirty || saving}
+            title="保存修改 (Ctrl+S)"
             className="h-9 px-5 rounded-xl inline-flex items-center gap-1.5 text-[13px] font-medium bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm shadow-indigo-600/20 disabled:opacity-40 transition-all"
           >
             <Save className="w-3.5 h-3.5" />
