@@ -170,6 +170,14 @@ func readProtocolItem(root registry.Key, basePath, displayBase string, scope Sco
 	}
 	// Also check shell\open for DelegateExecute or Application subkey (AppX/UWP patterns)
 	if !isUWP {
+		if openKey, err := registry.OpenKey(k, `shell\open`, registry.QUERY_VALUE); err == nil {
+			if _, _, err := openKey.GetValue("DelegateExecute", nil); err == nil {
+				isUWP = true
+			}
+			openKey.Close()
+		}
+	}
+	if !isUWP {
 		if appKey, err := registry.OpenKey(k, "Application", registry.QUERY_VALUE); err == nil {
 			isUWP = true
 			appKey.Close()
@@ -242,6 +250,8 @@ func populateIcons(items []ProtocolItem) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			cleanup := winutil.InitCOMThread()
+			defer cleanup()
 			for idx := range ch {
 				items[idx].IconData = winutil.ExtractIconDataURL(
 					items[idx].IconPath,

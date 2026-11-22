@@ -216,6 +216,103 @@ func TestFullLifecycleCRUDExportImportAndBatchClean(t *testing.T) {
 	}
 }
 
+func TestSecurityAndRegressionFixes(t *testing.T) {
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano()%1000000)
+	progID := "upmprogid" + suffix
+	expandScheme := "upmexpand" + suffix
+
+	t.Cleanup(func() {
+		_ = DeleteProtocol(ScopeHKCU, progID, DeleteModeFull)
+		_ = DeleteProtocol(ScopeHKCU, expandScheme, DeleteModeFull)
+	})
+
+	// 1. CreateProtocol must refuse to overwrite an existing non-URL-protocol key (e.g. ProgID)
+	k, _, err := winreg.CreateKey(winreg.CURRENT_USER, hkcuClassesPath+`\`+progID, winreg.SET_VALUE)
+	if err != nil {
+		t.Fatalf("setup non-protocol key failed: %v", err)
+	}
+	_ = k.SetStringValue("", "Original ProgID")
+	k.Close()
+
+	if err := CreateProtocol(ProtocolPayload{
+		Name:    progID,
+		Scope:   ScopeHKCU,
+		Command: `"%SystemRoot%\System32\notepad.exe" "%1"`,
+	}); err == nil {
+		t.Fatalf("expected CreateProtocol to reject colliding non-protocol key %s", progID)
+	}
+	// Verify original key remained untouched
+	kVerify, err := winreg.OpenKey(winreg.CURRENT_USER, hkcuClassesPath+`\`+progID, winreg.QUERY_VALUE)
+	if err != nil {
+		t.Fatalf("reopen progID failed: %v", err)
+	}
+	origDesc, _, _ := kVerify.GetStringValue("")
+	_, _, markerErr := kVerify.GetValue("URL Protocol", nil)
+	kVerify.Close()
+	if origDesc != "Original ProgID" || markerErr == nil {
+		t.Fatalf("existing ProgID was altered: desc=%q markerErr=%v", origDesc, markerErr)
+	}
+
+	// 2. Env var command must be stored as REG_EXPAND_SZ, preserved on update, and clearable when emptied
+	if err := CreateProtocol(ProtocolPayload{
+		Name:        expandScheme,
+		Scope:       ScopeHKCU,
+		Description: "URL:Expand Test",
+		Command:     `"%SystemRoot%\System32\notepad.exe" "%1"`,
+		IconPath:    `"%SystemRoot%\System32\notepad.exe",0`,
+	}); err != nil {
+		t.Fatalf("CreateProtocol(expandScheme) failed: %v", err)
+	}
+
+	cmdKey, err := winreg.OpenKey(winreg.CURRENT_USER, hkcuClassesPath+`\`+expandScheme+`\shell\open\command`, winreg.QUERY_VALUE)
+	if err != nil {
+		t.Fatalf("open command key failed: %v", err)
+	}
+	_, valType, err := cmdKey.GetValue("", nil)
+	cmdKey.Close()
+	if err != nil || valType != winreg.EXPAND_SZ {
+		t.Fatalf("expected REG_EXPAND_SZ (%d), got type=%d err=%v", winreg.EXPAND_SZ, valType, err)
+	}
+
+	// 3. BatchClean must refuse to delete a healthy protocol (Cleanable == false)
+	refused := BatchClean([]ProtocolRef{{Scope: ScopeHKCU, Name: expandScheme}})
+	if refused.Succeeded != 0 || refused.Failed != 1 {
+		t.Fatalf("expected BatchClean to reject healthy protocol, got %+v", refused)
+	}
+	if !ProtocolExists(ScopeHKCU, expandScheme) {
+		t.Fatalf("healthy protocol should not have been deleted by BatchClean")
+	}
+
+	// 4. Export & preview hex(2) DefaultIcon, and verify ApplyRegImport rejects empty selection
+	regBytes, err := ExportProtocolsToReg([]ProtocolRef{{Scope: ScopeHKCU, Name: expandScheme}})
+	if err != nil {
+		t.Fatalf("ExportProtocolsToReg failed: %v", err)
+	}
+	prev, err := PreviewRegImport("expand.reg", regBytes, ScopeHKCU)
+	if err != nil || len(prev.Items) != 1 || !strings.Contains(prev.Items[0].IconPath, "notepad.exe") {
+		t.Fatalf("expected preview to decode hex(2) DefaultIcon, got %+v err=%v", prev, err)
+	}
+	if _, err := ApplyRegImport(regBytes, []string{}, ScopeHKCU); err == nil {
+		t.Fatalf("expected ApplyRegImport with empty selectedIDs to fail")
+	}
+
+	// 5. Clearing command via UpdateProtocol actually removes the command default value
+	if err := UpdateProtocol(ProtocolPayload{
+		Name:        expandScheme,
+		Scope:       ScopeHKCU,
+		Description: "URL:Expand Test",
+		Command:     "",
+		IconPath:    "",
+	}); err != nil {
+		t.Fatalf("UpdateProtocol(clear command) failed: %v", err)
+	}
+	items, _ := ScanAll()
+	got := findByID(items, "HKCU:"+expandScheme)
+	if got == nil || got.Command != "" || got.Health != HealthEmpty {
+		t.Fatalf("expected cleared command with health=empty, got %+v", got)
+	}
+}
+
 func findByID(items []ProtocolItem, id string) *ProtocolItem {
 	for i := range items {
 		if strings.EqualFold(items[i].ID, id) {

@@ -70,9 +70,26 @@ func TestParseIconLocation(t *testing.T) {
 }
 
 func TestExtractIconDataURL(t *testing.T) {
+	cleanup := InitCOMThread()
+	defer cleanup()
 	notepad := filepath.Join(os.Getenv("SystemRoot"), "System32", "notepad.exe")
 	dataURL := ExtractIconDataURL(`"`+notepad+`",0`, notepad)
 	if !strings.HasPrefix(dataURL, "data:image/png;base64,") {
 		t.Fatalf("expected PNG data URL for notepad.exe, got prefix: %.30q", dataURL)
+	}
+}
+
+func TestLaunchURIValidation(t *testing.T) {
+	rejected := []string{
+		"",
+		"   ",
+		`C:\Windows\System32\notepad.exe`,
+		`D:/tools/app.exe`,
+		"not-a-uri",
+	}
+	for _, u := range rejected {
+		if err := TestLaunchURI(u); err == nil {
+			t.Errorf("expected TestLaunchURI(%q) to be rejected", u)
+		}
 	}
 }

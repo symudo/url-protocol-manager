@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"syscall"
 	"unicode/utf16"
@@ -17,6 +18,8 @@ import (
 var (
 	modKernel32                 = windows.NewLazySystemDLL("kernel32.dll")
 	procExpandEnvironmentString = modKernel32.NewProc("ExpandEnvironmentStringsW")
+	// Require at least 2 characters in scheme so single-letter Windows drive paths (e.g. C:\...) are rejected.
+	uriSchemePrefixPattern = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9+.-]+:`)
 )
 
 // ExpandEnvVars expands Windows environment variables such as %SystemRoot% or %LocalAppData%.
@@ -166,8 +169,8 @@ func ParseIconLocation(spec string) (path string, index int) {
 // TestLaunchURI asks Windows Shell to launch a custom URI such as `myapp://test`.
 func TestLaunchURI(uri string) error {
 	trimmed := strings.TrimSpace(uri)
-	if trimmed == "" || !strings.Contains(trimmed, ":") {
-		return fmt.Errorf("请输入有效的 URL（例如 myapp://test）")
+	if !uriSchemePrefixPattern.MatchString(trimmed) {
+		return fmt.Errorf("请输入有效的 URL 协议链接（例如 myapp://test），不支持本地文件路径")
 	}
 	verbPtr, err := syscall.UTF16PtrFromString("open")
 	if err != nil {
@@ -190,7 +193,12 @@ func RevealInExplorer(filePath string) error {
 		return fmt.Errorf("未找到有效路径")
 	}
 	if FileExists(target) {
-		cmd := exec.Command("explorer.exe", "/select,"+target)
+		// Use raw Windows CmdLine so paths containing spaces or commas are quoted cleanly after /select,
+		safeTarget := strings.ReplaceAll(target, `"`, "")
+		cmd := exec.Command("explorer.exe")
+		cmd.SysProcAttr = &syscall.SysProcAttr{
+			CmdLine: fmt.Sprintf(`explorer.exe /select,"%s"`, safeTarget),
+		}
 		return cmd.Start()
 	}
 	dir := filepath.Dir(target)

@@ -50,11 +50,16 @@ export const BatchCleanModal: React.FC<BatchCleanModalProps> = ({
     })
   }
 
+  const operableItems = items.filter((i) => i.scope === 'HKCU' || isAdmin)
+  const toggleTargets = operableItems.length > 0 ? operableItems : items
+  const allTargetsSelected =
+    toggleTargets.length > 0 && toggleTargets.every((i) => selectedIds.has(i.id))
+
   const toggleAll = () => {
-    if (selectedIds.size === items.length) {
+    if (allTargetsSelected) {
       setSelectedIds(new Set())
     } else {
-      setSelectedIds(new Set(items.map((i) => i.id)))
+      setSelectedIds(new Set(toggleTargets.map((i) => i.id)))
     }
   }
 
@@ -107,7 +112,7 @@ export const BatchCleanModal: React.FC<BatchCleanModalProps> = ({
               onClick={toggleAll}
               className="inline-flex items-center gap-1.5 font-medium text-indigo-600 dark:text-indigo-400 hover:underline"
             >
-              {selectedIds.size === items.length ? (
+              {allTargetsSelected ? (
                 <CheckSquare className="w-4 h-4" />
               ) : (
                 <Square className="w-4 h-4" />

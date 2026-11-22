@@ -19,7 +19,21 @@ var (
 	modAdvapi32       = windows.NewLazySystemDLL("advapi32.dll")
 	procRegDeleteTree = modAdvapi32.NewProc("RegDeleteTreeW")
 	schemePattern     = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9+.-]{0,63}$`)
+	envVarPattern     = regexp.MustCompile(`%[^%\s]+%`)
 )
+
+func writeRegStringSmart(k registry.Key, name, val string) error {
+	useExpand := envVarPattern.MatchString(val)
+	if !useExpand {
+		if _, valType, err := k.GetValue(name, nil); err == nil && valType == registry.EXPAND_SZ {
+			useExpand = true
+		}
+	}
+	if useExpand {
+		return k.SetExpandStringValue(name, val)
+	}
+	return k.SetStringValue(name, val)
+}
 
 // ValidateProtocolName ensures a protocol scheme adheres to RFC 3986 and is safe as a registry key name.
 func ValidateProtocolName(name string) error {
@@ -75,13 +89,14 @@ func CreateProtocol(payload ProtocolPayload) error {
 
 	keyPath := basePath + `\` + payload.Name
 
-	// Prevent silently overwriting an existing URL protocol
+	// Prevent overwriting an existing URL protocol OR an existing non-protocol ProgID/class key (e.g. txtfile, Folder)
 	if existing, err := registry.OpenKey(root, keyPath, registry.QUERY_VALUE); err == nil {
 		_, _, hasProtoErr := existing.GetValue("URL Protocol", nil)
 		existing.Close()
 		if hasProtoErr == nil {
 			return fmt.Errorf("协议 \"%s\" 在 %s 中已存在，请直接编辑或更换名称", payload.Name, payload.Scope)
 		}
+		return fmt.Errorf("名称 \"%s\" 已被 %s 中的其他系统注册表项或文件类型占用，请更换协议名称", payload.Name, payload.Scope)
 	}
 
 	desc := strings.TrimSpace(payload.Description)
@@ -89,7 +104,7 @@ func CreateProtocol(payload ProtocolPayload) error {
 		desc = fmt.Sprintf("URL:%s Protocol", payload.Name)
 	}
 
-	k, _, err := registry.CreateKey(root, keyPath, registry.SET_VALUE|registry.CREATE_SUB_KEY)
+	k, _, err := registry.CreateKey(root, keyPath, registry.QUERY_VALUE|registry.SET_VALUE|registry.CREATE_SUB_KEY)
 	if err != nil {
 		return fmt.Errorf("创建协议主键失败: %w", err)
 	}
@@ -105,11 +120,11 @@ func CreateProtocol(payload ProtocolPayload) error {
 	// Optional DefaultIcon subkey
 	iconPath := strings.TrimSpace(payload.IconPath)
 	if iconPath != "" {
-		iconKey, _, err := registry.CreateKey(k, "DefaultIcon", registry.SET_VALUE)
+		iconKey, _, err := registry.CreateKey(k, "DefaultIcon", registry.QUERY_VALUE|registry.SET_VALUE)
 		if err != nil {
 			return fmt.Errorf("创建 DefaultIcon 子键失败: %w", err)
 		}
-		err = iconKey.SetStringValue("", iconPath)
+		err = writeRegStringSmart(iconKey, "", iconPath)
 		iconKey.Close()
 		if err != nil {
 			return fmt.Errorf("写入图标路径失败: %w", err)
@@ -117,12 +132,12 @@ func CreateProtocol(payload ProtocolPayload) error {
 	}
 
 	// shell\open\command subkey hierarchy
-	cmdKey, _, err := registry.CreateKey(k, `shell\open\command`, registry.SET_VALUE)
+	cmdKey, _, err := registry.CreateKey(k, `shell\open\command`, registry.QUERY_VALUE|registry.SET_VALUE)
 	if err != nil {
 		return fmt.Errorf("创建 shell\\open\\command 子键失败: %w", err)
 	}
 	defer cmdKey.Close()
-	if err := cmdKey.SetStringValue("", strings.TrimSpace(payload.Command)); err != nil {
+	if err := writeRegStringSmart(cmdKey, "", strings.TrimSpace(payload.Command)); err != nil {
 		return fmt.Errorf("写入启动命令失败: %w", err)
 	}
 
@@ -152,7 +167,7 @@ func UpdateProtocol(payload ProtocolPayload) error {
 	}
 	defer k.Close()
 
-	if err := k.SetStringValue("", strings.TrimSpace(payload.Description)); err != nil {
+	if err := writeRegStringSmart(k, "", strings.TrimSpace(payload.Description)); err != nil {
 		return fmt.Errorf("更新协议描述失败: %w", err)
 	}
 	// Preserve existing URL Protocol marker if missing
@@ -165,11 +180,11 @@ func UpdateProtocol(payload ProtocolPayload) error {
 	// Update or clear DefaultIcon
 	iconPath := strings.TrimSpace(payload.IconPath)
 	if iconPath != "" {
-		iconKey, _, err := registry.CreateKey(k, "DefaultIcon", registry.SET_VALUE)
+		iconKey, _, err := registry.CreateKey(k, "DefaultIcon", registry.QUERY_VALUE|registry.SET_VALUE)
 		if err != nil {
 			return fmt.Errorf("更新 DefaultIcon 失败: %w", err)
 		}
-		err = iconKey.SetStringValue("", iconPath)
+		err = writeRegStringSmart(iconKey, "", iconPath)
 		iconKey.Close()
 		if err != nil {
 			return fmt.Errorf("写入图标路径失败: %w", err)
@@ -181,17 +196,22 @@ func UpdateProtocol(payload ProtocolPayload) error {
 		}
 	}
 
-	// Update shell\open\command
+	// Update or clear shell\open\command
 	cmdStr := strings.TrimSpace(payload.Command)
 	if cmdStr != "" {
-		cmdKey, _, err := registry.CreateKey(k, `shell\open\command`, registry.SET_VALUE)
+		cmdKey, _, err := registry.CreateKey(k, `shell\open\command`, registry.QUERY_VALUE|registry.SET_VALUE)
 		if err != nil {
 			return fmt.Errorf("更新启动命令子键失败: %w", err)
 		}
-		err = cmdKey.SetStringValue("", cmdStr)
+		err = writeRegStringSmart(cmdKey, "", cmdStr)
 		cmdKey.Close()
 		if err != nil {
 			return fmt.Errorf("写入启动命令失败: %w", err)
+		}
+	} else {
+		if cmdKey, err := registry.OpenKey(k, `shell\open\command`, registry.SET_VALUE|registry.QUERY_VALUE); err == nil {
+			_ = cmdKey.DeleteValue("")
+			cmdKey.Close()
 		}
 	}
 
@@ -227,12 +247,14 @@ func DeleteProtocol(scope Scope, name string, mode DeleteMode) error {
 		if err := k.DeleteValue("URL Protocol"); err != nil && err != registry.ErrNotExist {
 			return fmt.Errorf("停用协议失败: %w", err)
 		}
+		winutil.ClearIconCache()
 		return nil
 
 	case DeleteModeFull, "":
 		if err := deleteRegistryTree(root, keyPath); err != nil {
 			return fmt.Errorf("递归删除注册表树失败: %w", err)
 		}
+		winutil.ClearIconCache()
 		return nil
 
 	default:
@@ -260,7 +282,7 @@ func deleteRegistryTree(root registry.Key, subKey string) error {
 	return nil
 }
 
-// BatchClean deletes a list of confirmed stale protocols cleanly and reports per-item outcomes.
+// BatchClean re-verifies each candidate protocol is genuinely stale & safe to delete before removing it.
 func BatchClean(refs []ProtocolRef) BatchCleanResult {
 	res := BatchCleanResult{
 		Items: make([]BatchCleanItemResult, 0, len(refs)),
@@ -269,6 +291,26 @@ func BatchClean(refs []ProtocolRef) BatchCleanResult {
 		itemRes := BatchCleanItemResult{
 			Scope: ref.Scope,
 			Name:  ref.Name,
+		}
+		root, basePath, displayBase, err := rootForScope(ref.Scope)
+		if err != nil {
+			itemRes.Error = err.Error()
+			res.Failed++
+			res.Items = append(res.Items, itemRes)
+			continue
+		}
+		item, ok := readProtocolItem(root, basePath, displayBase, ref.Scope, ref.Name)
+		if !ok {
+			itemRes.Error = "协议不存在或已被移除"
+			res.Failed++
+			res.Items = append(res.Items, itemRes)
+			continue
+		}
+		if !item.Cleanable {
+			itemRes.Error = "该协议非安全可清理残留项（正常/系统UWP/复合键），已跳过保护"
+			res.Failed++
+			res.Items = append(res.Items, itemRes)
+			continue
 		}
 		if err := DeleteProtocol(ref.Scope, ref.Name, DeleteModeFull); err != nil {
 			itemRes.Success = false

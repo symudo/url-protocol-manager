@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import {
   AlertTriangle,
   Check,
@@ -48,14 +48,29 @@ export const DetailDrawer: React.FC<DetailDrawerProps> = ({
   const [showTestBox, setShowTestBox] = useState(false)
   const [testUri, setTestUri] = useState('')
   const [testing, setTesting] = useState(false)
+  const [discardWarn, setDiscardWarn] = useState(false)
+
+  const prevIdRef = useRef<string | null>(null)
+  const justSavedRef = useRef(false)
 
   useEffect(() => {
-    if (item) {
+    if (!item) {
+      prevIdRef.current = null
+      setDiscardWarn(false)
+      return
+    }
+    const switchedItem = prevIdRef.current !== item.id
+    if (switchedItem || justSavedRef.current) {
+      prevIdRef.current = item.id
+      justSavedRef.current = false
       setDescription(item.description)
       setCommand(item.command)
       setIconPath(item.iconPath)
-      setShowTestBox(false)
-      setTestUri(`${item.name}://test`)
+      setDiscardWarn(false)
+      if (switchedItem) {
+        setShowTestBox(false)
+        setTestUri(`${item.name}://test`)
+      }
     }
   }, [item])
 
@@ -66,6 +81,15 @@ export const DetailDrawer: React.FC<DetailDrawerProps> = ({
     description !== item.description ||
     command !== item.command ||
     iconPath !== item.iconPath
+
+  const handleRequestClose = () => {
+    if (isDirty && !discardWarn) {
+      setDiscardWarn(true)
+      return
+    }
+    setDiscardWarn(false)
+    onClose()
+  }
 
   const handleCopyRegPath = async () => {
     try {
@@ -91,6 +115,7 @@ export const DetailDrawer: React.FC<DetailDrawerProps> = ({
     if (needsAdmin || !isDirty || saving) return
     setSaving(true)
     try {
+      justSavedRef.current = true
       await onSave({
         name: item.name,
         scope: item.scope,
@@ -98,6 +123,9 @@ export const DetailDrawer: React.FC<DetailDrawerProps> = ({
         command,
         iconPath,
       })
+      setDiscardWarn(false)
+    } catch {
+      justSavedRef.current = false
     } finally {
       setSaving(false)
     }
@@ -151,13 +179,38 @@ export const DetailDrawer: React.FC<DetailDrawerProps> = ({
           </div>
 
           <button
-            onClick={onClose}
+            onClick={handleRequestClose}
             className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 dark:hover:text-slate-200 dark:hover:bg-slate-800 transition-colors"
-            title="关闭详情 (Esc)"
+            title={isDirty ? '存在未保存修改，点击确认放弃' : '关闭详情 (Esc)'}
           >
             <X className="w-4 h-4" />
           </button>
         </div>
+
+        {discardWarn && isDirty && (
+          <div className="mt-3 px-3 py-2 rounded-xl bg-amber-50 dark:bg-amber-500/15 border border-amber-200/80 dark:border-amber-500/30 flex items-center justify-between gap-2 text-[12px] text-amber-800 dark:text-amber-200">
+            <span>当前有未保存的修改，确定放弃并关闭吗？</span>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                onClick={() => setDiscardWarn(false)}
+                className="px-2 py-0.5 rounded-md hover:bg-amber-100 dark:hover:bg-amber-500/20 font-medium"
+              >
+                继续编辑
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setDiscardWarn(false)
+                  onClose()
+                }}
+                className="px-2 py-0.5 rounded-md bg-amber-600 text-white hover:bg-amber-700 font-medium"
+              >
+                放弃关闭
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Quick Actions */}
         <div className="mt-4 flex items-center gap-2">

@@ -332,7 +332,7 @@ func ParseRegContent(raw []byte, hkcrFallback Scope) ([]parsedProtocolGroup, int
 					grp.Description = v.StrVal
 				}
 			case "defaulticon":
-				if v.Name == "" && v.ValType == registry.SZ {
+				if v.Name == "" && (v.ValType == registry.SZ || v.ValType == registry.EXPAND_SZ) {
 					grp.IconPath = v.StrVal
 				}
 			case `shell\open\command`:
@@ -552,6 +552,10 @@ func PreviewRegImport(filePath string, raw []byte, hkcrFallback Scope) (ImportPr
 
 // ApplyRegImport writes the user-selected protocols from a .reg file into Windows Registry.
 func ApplyRegImport(raw []byte, selectedIDs []string, hkcrFallback Scope) (ImportApplyResult, error) {
+	if len(selectedIDs) == 0 {
+		return ImportApplyResult{Errors: []string{}}, fmt.Errorf("未选择要导入的协议")
+	}
+
 	groups, _, err := ParseRegContent(raw, hkcrFallback)
 	if err != nil {
 		return ImportApplyResult{}, err
@@ -567,7 +571,7 @@ func ApplyRegImport(raw []byte, selectedIDs []string, hkcrFallback Scope) (Impor
 	}
 
 	for _, g := range groups {
-		if len(selected) > 0 && !selected[strings.ToLower(g.ID)] {
+		if !selected[strings.ToLower(g.ID)] {
 			continue
 		}
 		if err := writeProtocolGroup(g); err != nil {

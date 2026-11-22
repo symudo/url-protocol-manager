@@ -52,11 +52,16 @@ export const ImportModal: React.FC<ImportModalProps> = ({
     })
   }
 
+  const operableItems = preview.items.filter((i) => !i.needsAdmin)
+  const toggleTargets = operableItems.length > 0 ? operableItems : preview.items
+  const allTargetsSelected =
+    toggleTargets.length > 0 && toggleTargets.every((i) => selectedIds.has(i.id))
+
   const toggleAll = () => {
-    if (selectedIds.size === preview.items.length) {
+    if (allTargetsSelected) {
       setSelectedIds(new Set())
     } else {
-      setSelectedIds(new Set(preview.items.map((i) => i.id)))
+      setSelectedIds(new Set(toggleTargets.map((i) => i.id)))
     }
   }
 
@@ -117,7 +122,7 @@ export const ImportModal: React.FC<ImportModalProps> = ({
                     onClick={toggleAll}
                     className="inline-flex items-center gap-1.5 font-medium text-indigo-600 dark:text-indigo-400 hover:underline"
                   >
-                    {selectedIds.size === preview.items.length ? (
+                    {allTargetsSelected ? (
                       <CheckSquare className="w-4 h-4" />
                     ) : (
                       <Square className="w-4 h-4" />

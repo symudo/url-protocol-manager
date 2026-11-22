@@ -10,6 +10,7 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -19,9 +20,12 @@ import (
 )
 
 var (
+	modOle32          = windows.NewLazySystemDLL("ole32.dll")
 	modShell32        = windows.NewLazySystemDLL("shell32.dll")
 	modUser32         = windows.NewLazySystemDLL("user32.dll")
 	modGdi32          = windows.NewLazySystemDLL("gdi32.dll")
+	procCoInitialize  = modOle32.NewProc("CoInitializeEx")
+	procCoUninit      = modOle32.NewProc("CoUninitialize")
 	procExtractIconEx = modShell32.NewProc("ExtractIconExW")
 	procSHGetFileInfo = modShell32.NewProc("SHGetFileInfoW")
 	procGetIconInfo   = modUser32.NewProc("GetIconInfo")
@@ -34,11 +38,27 @@ var (
 )
 
 const (
-	shgfiIcon      = 0x000000100
-	shgfiLargeIcon = 0x000000000
-	biRGB          = 0
-	dibRGBColors   = 0
+	coinitApartmentThreaded = 0x2
+	shgfiIcon               = 0x000000100
+	shgfiLargeIcon          = 0x000000000
+	biRGB                   = 0
+	dibRGBColors            = 0
 )
+
+// InitCOMThread locks the current goroutine to an OS thread and initializes COM (STA)
+// as required by Shell APIs such as SHGetFileInfoW. Call the returned cleanup via defer.
+func InitCOMThread() func() {
+	runtime.LockOSThread()
+	hr, _, _ := procCoInitialize.Call(0, coinitApartmentThreaded)
+	// S_OK (0) or S_FALSE (1) require a matching CoUninitialize call.
+	needUninit := hr == 0 || hr == 1
+	return func() {
+		if needUninit {
+			procCoUninit.Call()
+		}
+		runtime.UnlockOSThread()
+	}
+}
 
 type shFileInfo struct {
 	hIcon         uintptr

@@ -35,7 +35,10 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   ]
 
   return (
-    <header className="wails-drag h-12 shrink-0 flex items-center justify-between px-4 bg-white/90 dark:bg-[#161B22]/95 border-b border-slate-200/80 dark:border-slate-800/90 backdrop-blur-md">
+    <header
+      onDoubleClick={() => windowControls.toggleMaximise()}
+      className="wails-drag h-12 shrink-0 flex items-center justify-between px-4 bg-white/90 dark:bg-[#161B22]/95 border-b border-slate-200/80 dark:border-slate-800/90 backdrop-blur-md"
+    >
       {/* Left: App Brand */}
       <div className="flex items-center gap-2.5">
         <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500 to-blue-600 flex items-center justify-center text-white shadow-sm">
@@ -52,7 +55,10 @@ export const TitleBar: React.FC<TitleBarProps> = ({
       </div>
 
       {/* Right: UAC Status + Theme Switcher + Window Controls */}
-      <div className="wails-nodrag flex items-center gap-2.5">
+      <div
+        onDoubleClick={(e) => e.stopPropagation()}
+        className="wails-nodrag flex items-center gap-2.5"
+      >
         {isAdmin ? (
           <div
             title="当前以管理员身份运行，可自由修改 HKCU 与 HKLM 协议"

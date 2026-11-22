@@ -24,7 +24,7 @@ import type {
 export default function App() {
   const { mode: themeMode, setMode: setThemeMode } = useTheme()
 
-  const [appInfo, setAppInfo] = useState<AppInfo>({ version: '1.0.0', isAdmin: false })
+  const [appInfo, setAppInfo] = useState<AppInfo>({ version: '1.0.1', isAdmin: false })
   const [protocols, setProtocols] = useState<ProtocolItem[]>([])
   const [loading, setLoading] = useState(true)
 

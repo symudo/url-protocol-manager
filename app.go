@@ -13,7 +13,8 @@ import (
 	"url-protocol-manager/internal/winutil"
 )
 
-const AppVersion = "1.0.0"
+// AppVersion can be overridden at build time via -ldflags "-X main.AppVersion=x.y.z".
+var AppVersion = "1.0.1"
 
 // AppInfo exposes application metadata and current privilege status.
 type AppInfo struct {
