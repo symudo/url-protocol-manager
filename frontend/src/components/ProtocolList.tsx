@@ -1,5 +1,5 @@
 import React from 'react'
-import { ChevronRight, Layers, SearchX } from 'lucide-react'
+import { Check, ChevronRight, Layers, SearchX } from 'lucide-react'
 import type { ProtocolItem } from '../types'
 import { ProtocolAvatar } from './ProtocolAvatar'
 
@@ -8,7 +8,10 @@ interface ProtocolListProps {
   selectedId: string | null
   loading: boolean
   hasQuery: boolean
+  selectMode: boolean
+  checkedIds: Set<string>
   onSelect: (item: ProtocolItem) => void
+  onToggleCheck: (id: string) => void
   onResetFilter: () => void
 }
 
@@ -50,7 +53,10 @@ export const ProtocolList: React.FC<ProtocolListProps> = ({
   selectedId,
   loading,
   hasQuery,
+  selectMode,
+  checkedIds,
   onSelect,
+  onToggleCheck,
   onResetFilter,
 }) => {
   if (loading && items.length === 0) {
@@ -101,7 +107,8 @@ export const ProtocolList: React.FC<ProtocolListProps> = ({
     <div className="flex-1 overflow-y-auto px-6 py-4">
       <div className="space-y-2 pb-6">
         {items.map((item) => {
-          const selected = item.id === selectedId
+          const checked = selectMode && checkedIds.has(item.id)
+          const selected = !selectMode && item.id === selectedId
           const summaryParts: string[] = []
           if (item.description) summaryParts.push(item.description)
           if (item.executableName) summaryParts.push(item.executableName)
@@ -111,13 +118,25 @@ export const ProtocolList: React.FC<ProtocolListProps> = ({
           return (
             <button
               key={item.id}
-              onClick={() => onSelect(item)}
+              onClick={() => (selectMode ? onToggleCheck(item.id) : onSelect(item))}
               className={`w-full text-left group rounded-2xl px-4 py-3.5 flex items-center gap-3.5 border transition-all ${
-                selected
+                selected || checked
                   ? 'bg-indigo-50/70 dark:bg-indigo-500/10 border-indigo-300 dark:border-indigo-500/50 shadow-sm'
                   : 'bg-white dark:bg-[#161B22] border-slate-200/75 dark:border-slate-800/90 hover:border-slate-300 dark:hover:border-slate-700 hover:shadow-soft'
               }`}
             >
+              {selectMode && (
+                <span
+                  className={`w-5 h-5 rounded-md shrink-0 flex items-center justify-center border transition-all ${
+                    checked
+                      ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm'
+                      : 'bg-white dark:bg-[#0D1117] border-slate-300 dark:border-slate-600 group-hover:border-indigo-400'
+                  }`}
+                >
+                  {checked && <Check className="w-3.5 h-3.5 stroke-[2.8]" />}
+                </span>
+              )}
+
               <ProtocolAvatar name={item.name} iconData={item.iconData} />
 
               <div className="min-w-0 flex-1">
@@ -175,13 +194,15 @@ export const ProtocolList: React.FC<ProtocolListProps> = ({
 
               <div className="shrink-0 flex items-center gap-2.5">
                 <HealthBadge item={item} />
-                <ChevronRight
-                  className={`w-4 h-4 transition-transform ${
-                    selected
-                      ? 'text-indigo-500 translate-x-0.5'
-                      : 'text-slate-300 dark:text-slate-600 group-hover:text-slate-500 dark:group-hover:text-slate-400 group-hover:translate-x-0.5'
-                  }`}
-                />
+                {!selectMode && (
+                  <ChevronRight
+                    className={`w-4 h-4 transition-transform ${
+                      selected
+                        ? 'text-indigo-500 translate-x-0.5'
+                        : 'text-slate-300 dark:text-slate-600 group-hover:text-slate-500 dark:group-hover:text-slate-400 group-hover:translate-x-0.5'
+                    }`}
+                  />
+                )}
               </div>
             </button>
           )

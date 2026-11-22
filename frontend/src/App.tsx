@@ -24,13 +24,15 @@ import type {
 export default function App() {
   const { mode: themeMode, setMode: setThemeMode } = useTheme()
 
-  const [appInfo, setAppInfo] = useState<AppInfo>({ version: '1.0.1', isAdmin: false })
+  const [appInfo, setAppInfo] = useState<AppInfo>({ version: '1.0.2', isAdmin: false })
   const [protocols, setProtocols] = useState<ProtocolItem[]>([])
   const [loading, setLoading] = useState(true)
 
   const [query, setQuery] = useState('')
   const [activeTab, setActiveTab] = useState<FilterTab>('all')
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [selectMode, setSelectMode] = useState(false)
+  const [checkedExportIds, setCheckedExportIds] = useState<Set<string>>(new Set())
 
   const [createOpen, setCreateOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<ProtocolItem | null>(null)
@@ -85,12 +87,15 @@ export default function App() {
         else if (createOpen) setCreateOpen(false)
         else if (importPreview) setImportPreview(null)
         else if (batchCleanOpen) setBatchCleanOpen(false)
-        else if (selectedId) setSelectedId(null)
+        else if (selectMode) {
+          setSelectMode(false)
+          setCheckedExportIds(new Set())
+        } else if (selectedId) setSelectedId(null)
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [deleteTarget, createOpen, importPreview, batchCleanOpen, selectedId])
+  }, [deleteTarget, createOpen, importPreview, batchCleanOpen, selectMode, selectedId])
 
   const counts = useMemo(() => {
     let hkcu = 0
@@ -135,6 +140,18 @@ export default function App() {
   const selectedItem = useMemo(
     () => protocols.find((p) => p.id === selectedId) || null,
     [protocols, selectedId],
+  )
+
+  const selectedExportItems = useMemo(
+    () => protocols.filter((p) => checkedExportIds.has(p.id)),
+    [protocols, checkedExportIds],
+  )
+
+  const allFilteredChecked = useMemo(
+    () =>
+      filteredProtocols.length > 0 &&
+      filteredProtocols.every((p) => checkedExportIds.has(p.id)),
+    [filteredProtocols, checkedExportIds],
   )
 
   const handleRequestAdmin = async () => {
@@ -207,9 +224,66 @@ export default function App() {
         name: p.name,
       }))
       const saved = await api.exportProtocols(refs, 'all-url-protocols-backup.reg')
-      if (saved) notify('success', `已备份全部 ${refs.length} 项协议至 ${saved}`)
+      if (saved) notify('success', `已导出全部 ${refs.length} 项协议至 ${saved}`)
     } catch (err) {
-      notify('error', `备份失败：${formatError(err)}`)
+      notify('error', `导出失败：${formatError(err)}`)
+    }
+  }
+
+  const handleEnterSelectExport = () => {
+    setSelectedId(null)
+    setSelectMode(true)
+    setCheckedExportIds(new Set())
+  }
+
+  const handleExitSelectExport = () => {
+    setSelectMode(false)
+    setCheckedExportIds(new Set())
+  }
+
+  const handleToggleCheckExport = (id: string) => {
+    setCheckedExportIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const handleToggleSelectAllFiltered = () => {
+    setCheckedExportIds((prev) => {
+      const next = new Set(prev)
+      if (allFilteredChecked) {
+        for (const p of filteredProtocols) {
+          next.delete(p.id)
+        }
+      } else {
+        for (const p of filteredProtocols) {
+          next.add(p.id)
+        }
+      }
+      return next
+    })
+  }
+
+  const handleExportSelected = async () => {
+    if (selectedExportItems.length === 0) return
+    try {
+      const refs: ProtocolRef[] = selectedExportItems.map((p) => ({
+        scope: p.scope,
+        name: p.name,
+      }))
+      const suggestedName =
+        refs.length === 1
+          ? `${refs[0].name}-${refs[0].scope}.reg`
+          : `selected-url-protocols-${refs.length}.reg`
+      const saved = await api.exportProtocols(refs, suggestedName)
+      if (saved) {
+        notify('success', `已导出勾选的 ${refs.length} 项协议至 ${saved}`)
+        handleExitSelectExport()
+      }
+    } catch (err) {
+      notify('error', `导出失败：${formatError(err)}`)
     }
   }
 
@@ -333,10 +407,19 @@ export default function App() {
             onTabChange={setActiveTab}
             counts={counts}
             loading={loading}
+            selectMode={selectMode}
+            selectedExportCount={selectedExportItems.length}
+            filteredCount={filteredProtocols.length}
+            allFilteredChecked={allFilteredChecked}
             onRefresh={loadProtocols}
             onCreate={() => setCreateOpen(true)}
             onImport={handleOpenImport}
             onExportAll={handleExportAll}
+            onEnterSelectExport={handleEnterSelectExport}
+            onExitSelectExport={handleExitSelectExport}
+            onToggleSelectAllFiltered={handleToggleSelectAllFiltered}
+            onClearSelectExport={() => setCheckedExportIds(new Set())}
+            onExportSelected={handleExportSelected}
             onOpenBatchClean={() => setBatchCleanOpen(true)}
           />
 
@@ -345,7 +428,10 @@ export default function App() {
             selectedId={selectedId}
             loading={loading}
             hasQuery={query.trim() !== '' || activeTab !== 'all'}
+            selectMode={selectMode}
+            checkedIds={checkedExportIds}
             onSelect={(item) => setSelectedId(item.id)}
+            onToggleCheck={handleToggleCheckExport}
             onResetFilter={() => {
               setQuery('')
               setActiveTab('all')

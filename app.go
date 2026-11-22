@@ -14,7 +14,7 @@ import (
 )
 
 // AppVersion can be overridden at build time via -ldflags "-X main.AppVersion=x.y.z".
-var AppVersion = "1.0.1"
+var AppVersion = "1.0.2"
 
 // AppInfo exposes application metadata and current privilege status.
 type AppInfo struct {

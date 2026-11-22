@@ -1,10 +1,15 @@
-import React from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import {
+  CheckSquare,
+  ChevronDown,
   Download,
+  FileDown,
+  ListChecks,
   Plus,
   RefreshCw,
   Search,
   Sparkles,
+  Square,
   Upload,
   X,
 } from 'lucide-react'
@@ -28,10 +33,19 @@ interface ToolbarProps {
   onTabChange: (tab: FilterTab) => void
   counts: FilterCounts
   loading: boolean
+  selectMode: boolean
+  selectedExportCount: number
+  filteredCount: number
+  allFilteredChecked: boolean
   onRefresh: () => void
   onCreate: () => void
   onImport: () => void
   onExportAll: () => void
+  onEnterSelectExport: () => void
+  onExitSelectExport: () => void
+  onToggleSelectAllFiltered: () => void
+  onClearSelectExport: () => void
+  onExportSelected: () => void
   onOpenBatchClean: () => void
 }
 
@@ -43,12 +57,42 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   onTabChange,
   counts,
   loading,
+  selectMode,
+  selectedExportCount,
+  filteredCount,
+  allFilteredChecked,
   onRefresh,
   onCreate,
   onImport,
   onExportAll,
+  onEnterSelectExport,
+  onExitSelectExport,
+  onToggleSelectAllFiltered,
+  onClearSelectExport,
+  onExportSelected,
   onOpenBatchClean,
 }) => {
+  const [exportMenuOpen, setExportMenuOpen] = useState(false)
+  const exportMenuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!exportMenuOpen) return
+    const onPointerDown = (e: MouseEvent) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
+        setExportMenuOpen(false)
+      }
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setExportMenuOpen(false)
+    }
+    window.addEventListener('mousedown', onPointerDown)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('mousedown', onPointerDown)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [exportMenuOpen])
+
   const tabs: { id: FilterTab; label: string; count: number; accent?: string }[] = [
     { id: 'all', label: '全部协议', count: counts.all },
     { id: 'hkcu', label: '用户级 HKCU', count: counts.hkcu },
@@ -101,14 +145,61 @@ export const Toolbar: React.FC<ToolbarProps> = ({
             <span>导入 .reg</span>
           </button>
 
-          <button
-            onClick={onExportAll}
-            disabled={counts.all === 0}
-            className="h-10 px-3.5 rounded-xl inline-flex items-center gap-1.5 text-[13px] font-medium bg-white dark:bg-[#161B22] text-slate-700 dark:text-slate-200 border border-slate-200/90 dark:border-slate-700/80 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-800/70 shadow-soft disabled:opacity-45 transition-all"
-          >
-            <Download className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
-            <span>备份全部</span>
-          </button>
+          <div className="relative" ref={exportMenuRef}>
+            <button
+              onClick={() => setExportMenuOpen((v) => !v)}
+              disabled={counts.all === 0}
+              className={`h-10 px-3.5 rounded-xl inline-flex items-center gap-1.5 text-[13px] font-medium border shadow-soft disabled:opacity-45 transition-all ${
+                selectMode || exportMenuOpen
+                  ? 'bg-indigo-50 dark:bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border-indigo-300 dark:border-indigo-500/40'
+                  : 'bg-white dark:bg-[#161B22] text-slate-700 dark:text-slate-200 border-slate-200/90 dark:border-slate-700/80 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-800/70'
+              }`}
+            >
+              <Download className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
+              <span>导出 .reg</span>
+              <ChevronDown
+                className={`w-3.5 h-3.5 text-slate-400 transition-transform ${
+                  exportMenuOpen ? 'rotate-180' : ''
+                }`}
+              />
+            </button>
+
+            {exportMenuOpen && (
+              <div className="animate-modal absolute right-0 mt-1.5 w-52 rounded-xl bg-white dark:bg-[#161B22] border border-slate-200/90 dark:border-slate-700/80 shadow-lg p-1.5 z-40">
+                <button
+                  onClick={() => {
+                    setExportMenuOpen(false)
+                    onExportAll()
+                  }}
+                  className="w-full px-3 py-2 rounded-lg text-left flex items-center gap-2.5 text-[13px] text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                >
+                  <FileDown className="w-4 h-4 text-indigo-500 shrink-0" />
+                  <div>
+                    <div className="font-medium leading-tight">全部导出 (.reg)</div>
+                    <div className="text-[11px] text-slate-400 mt-0.5">
+                      导出全部 {counts.all} 项协议
+                    </div>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setExportMenuOpen(false)
+                    onEnterSelectExport()
+                  }}
+                  className="w-full px-3 py-2 rounded-lg text-left flex items-center gap-2.5 text-[13px] text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                >
+                  <ListChecks className="w-4 h-4 text-sky-500 shrink-0" />
+                  <div>
+                    <div className="font-medium leading-tight">勾选后导出 (.reg)</div>
+                    <div className="text-[11px] text-slate-400 mt-0.5">
+                      按需多选或筛选全选导出
+                    </div>
+                  </div>
+                </button>
+              </div>
+            )}
+          </div>
 
           <button
             onClick={onRefresh}
@@ -161,7 +252,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           })}
         </div>
 
-        {counts.cleanable > 0 && (
+        {counts.cleanable > 0 && !selectMode && (
           <button
             onClick={onOpenBatchClean}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12.5px] font-medium bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200/90 dark:bg-amber-500/10 dark:hover:bg-amber-500/20 dark:text-amber-300 dark:border-amber-500/30 transition-colors"
@@ -171,6 +262,68 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           </button>
         )}
       </div>
+
+      {/* Multi-select Export Action Bar */}
+      {selectMode && (
+        <div className="animate-modal px-4 py-2.5 rounded-xl bg-indigo-50/85 dark:bg-indigo-500/10 border border-indigo-200/90 dark:border-indigo-500/30 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center flex-wrap gap-3 text-[12.5px]">
+            <button
+              type="button"
+              disabled={filteredCount === 0}
+              onClick={onToggleSelectAllFiltered}
+              className="inline-flex items-center gap-1.5 font-medium text-indigo-700 dark:text-indigo-300 hover:underline disabled:opacity-40"
+            >
+              {allFilteredChecked && filteredCount > 0 ? (
+                <CheckSquare className="w-4 h-4" />
+              ) : (
+                <Square className="w-4 h-4" />
+              )}
+              <span>
+                {allFilteredChecked && filteredCount > 0
+                  ? `取消当前列表 (${filteredCount})`
+                  : `全选当前列表 (${filteredCount})`}
+              </span>
+            </button>
+
+            <span className="text-slate-500 dark:text-slate-400">
+              已勾选{' '}
+              <strong className="font-mono text-indigo-700 dark:text-indigo-300">
+                {selectedExportCount}
+              </strong>{' '}
+              项
+            </span>
+
+            {selectedExportCount > 0 && (
+              <button
+                type="button"
+                onClick={onClearSelectExport}
+                className="text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 underline-offset-2 hover:underline"
+              >
+                清空已选
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onExitSelectExport}
+              className="h-8 px-3 rounded-lg text-[12.5px] font-medium text-slate-600 dark:text-slate-300 hover:bg-indigo-100/80 dark:hover:bg-slate-800 transition-colors"
+            >
+              退出多选
+            </button>
+            <button
+              type="button"
+              disabled={selectedExportCount === 0}
+              onClick={onExportSelected}
+              className="h-8 px-3.5 rounded-lg inline-flex items-center gap-1.5 text-[12.5px] font-medium bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm shadow-indigo-600/20 disabled:opacity-40 transition-all"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>导出已选 ({selectedExportCount}) 为 .reg</span>
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
